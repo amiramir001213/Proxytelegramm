@@ -1,48 +1,45 @@
-import os
-import subprocess
+import socket
+import threading
 import secrets
-
-def install_packages():
-    os.system("pkg update -y && pkg upgrade -y")
-    os.system("pkg install git curl make clang -y")
-
-def download_mtproxy():
-    if not os.path.exists("MTProxy"):
-        os.system("git clone https://github.com/TelegramMessenger/MTProxy")
-    os.chdir("MTProxy")
-    os.system("make")
+import subprocess
 
 def generate_secret():
     return secrets.token_hex(16)
 
-def run_proxy(port, secret):
-    cmd = f"./objs/bin/mtproto-proxy -u nobody -p {port} -H {port} -S {secret} --aes-pwd proxy-secret proxy-multi.conf -M 1"
-    print(f"\n[+] اجرای دستور:\n{cmd}\n")
-    subprocess.Popen(cmd, shell=True)
+def handle_client(client_socket, target_host, target_port):
+    proxy_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    proxy_socket.connect((target_host, target_port))
+    while True:
+        try:
+            request = client_socket.recv(4096)
+            if not request:
+                break
+            proxy_socket.sendall(request)
+            response = proxy_socket.recv(4096)
+            client_socket.sendall(response)
+        except:
+            break
+    client_socket.close()
+    proxy_socket.close()
 
-def get_ip():
-    return subprocess.getoutput("curl -s https://ipinfo.io/ip")
-
-def main():
-    print(">> نصب پیش‌نیازها ...")
-    install_packages()
-
-    print(">> دانلود و ساخت MTProxy ...")
-    download_mtproxy()
-
-    print(">> تولید secret ...")
-    secret = generate_secret()
-    
-    port = input(">> پورت دلخواهت رو وارد کن (مثلاً 443): ").strip()
-
-    print(">> اجرای پروکسی ...")
-    run_proxy(port, secret)
-
-    ip = get_ip()
-    tg_link = f"tg://proxy?server={ip}&port={port}&secret=ee{secret}"
-    print("\n[+] پروکسی ساخته شد!")
-    print("[+] لینک اتصال تلگرام:")
-    print(tg_link)
+def start_proxy(listen_port, target_host, target_port):
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(('0.0.0.0', listen_port))
+    server.listen(10)
+    print(f"[+] پروکسی راه‌اندازی شد روی پورت {listen_port}")
+    while True:
+        client_socket, addr = server.accept()
+        thread = threading.Thread(target=handle_client, args=(client_socket, target_host, target_port))
+        thread.start()
 
 if __name__ == "__main__":
-    main()
+    print(">>> شروع ساخت پروکسی ساده ...")
+    secret = generate_secret()
+    port = 8888
+    tg_ip = "149.154.167.50"  # یکی از سرورهای تلگرام
+    tg_port = 443
+    threading.Thread(target=start_proxy, args=(port, tg_ip, tg_port)).start()
+
+    ip = subprocess.getoutput("curl -s https://ipinfo.io/ip")
+    tg_link = f"tg://proxy?server={ip}&port={port}&secret=ee{secret}"
+    print(f"\n[+] لینک اتصال تلگرام:\n{tg_link}")
